@@ -40,8 +40,6 @@ jupyter notebook Codes_replicated_cleaned.ipynb
 ```
 and run all cells top to bottom (`Kernel → Restart & Run All` in Jupyter, or `Run All` in VS Code).
 
-**3. Run:** `Kernel → Restart & Run All`
-
 All figures and tables will be saved to `replication_results/`.
 
 ---
