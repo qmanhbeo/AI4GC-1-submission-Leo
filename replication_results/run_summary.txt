@@ -1,0 +1,38 @@
+Paper-aligned replication completed.
+Output folder: replication_results
+Rows in CSV: 167
+Rows used for clustering: 143
+Missing progress values dropped: 24
+KMeans settings: {'init': 'k-means++', 'n_init': 1, 'random_state': 42}
+
+Cluster sizes (k=5):
+{0: 56, 1: 33, 2: 35, 3: 2, 4: 17}
+
+Table 2 / Figure 5 (paper-aligned):
+ k  WCSS (Inertia)  Silhouette Score
+ 2      470.215859          0.330908
+ 3      345.376528          0.377299
+ 4      220.940704          0.403143
+ 5      169.692762          0.405511
+ 6      150.810466          0.338451
+ 7      133.120291          0.340670
+ 8      123.324005          0.273683
+ 9      113.672557          0.262040
+10      105.188483          0.252328
+
+Figure 4 correlation matrix (full dataframe):
+                 sdg_score  spillover_score  regional_score  population  progress
+sdg_score            1.000           -0.571           0.819       0.017    -0.162
+spillover_score     -0.571            1.000          -0.558       0.110     0.319
+regional_score       0.819           -0.558           1.000       0.046    -0.337
+population           0.017            0.110           0.046       1.000     0.020
+progress            -0.162            0.319          -0.337       0.020     1.000
+
+Computed Table 5 verification:
+              Model  Accuracy  Precision (Macro Avg)  Recall (Macro Avg)  F1 Score (Macro Avg)  ROC AUC (Macro)
+      Random Forest     0.977                  0.789               0.800                 0.794            1.000
+                SVM     0.977                  0.982               0.960                 0.968            1.000
+      Decision Tree     0.977                  0.989               0.960                 0.972            0.974
+            XGBoost     0.907                  0.750               0.708                 0.718            0.835
+                ANN     0.977                  0.982               0.988                 0.984            1.000
+Logistic Regression     0.953                  0.968               0.968                 0.968            0.994
