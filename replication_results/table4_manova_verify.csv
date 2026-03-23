@@ -1,5 +1,0 @@
-Test Statistic,Value,F-Value,p-Value,Significant (p<0.05)
-Wilks' lambda,0.993,0.463,0.63,No
-Pillai's trace,0.007,0.463,0.63,No
-Hotelling-Lawley trace,0.007,0.463,0.63,No
-Roy's greatest root,0.007,0.463,0.63,No
