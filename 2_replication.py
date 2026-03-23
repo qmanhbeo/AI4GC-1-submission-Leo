@@ -1,8 +1,27 @@
+"""
+Replication script for the SDG 2025 analysis.
+
+This file runs the full workflow end to end:
+- read and rename the dataset,
+- standardize the selected indicators,
+- reduce dimensionality with PCA,
+- cluster countries with KMeans,
+- reproduce the main paper-style figures/tables,
+- benchmark several classifiers on the resulting cluster labels,
+- save everything into `replication_results/`.
+
+The comments are intentionally dense so a marker can follow the process
+behind each section of code without needing separate notes.
+"""
+
+# Standard-library imports used for warning control and path handling.
 import warnings
 from pathlib import Path
 
 import matplotlib
 
+# Use a non-interactive backend because this script saves figures to disk
+# instead of opening them in a GUI window.
 matplotlib.use("Agg")
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as path_effects
@@ -33,18 +52,27 @@ from sklearn.tree import DecisionTreeClassifier
 from statsmodels.multivariate.manova import MANOVA
 from xgboost import XGBClassifier
 
+# Hide third-party warnings so the replication output stays clean.
 warnings.filterwarnings("ignore")
 
+# Give all Seaborn figures the same baseline style.
 sns.set_theme(style="whitegrid")
 
+# Create a dedicated output folder for every generated figure/table/text file.
 OUTDIR = Path("replication_results")
 OUTDIR.mkdir(exist_ok=True)
 
+# These are the five numeric variables used repeatedly across clustering,
+# interpretation, and classification.
 FEATURES = ["sdg_score", "spillover_score", "regional_score", "population", "progress"]
+
+# Fix KMeans settings to a deterministic, paper-aligned configuration.
 PAPER_KMEANS = {"init": "k-means++", "n_init": 1, "random_state": 42}
 
-# Load data and prepare clustering inputs
+# Load the raw dataset using the delimiter and encoding that match the source file.
 df = pd.read_csv("SDG2025.csv", sep=";", encoding="ISO-8859-1", engine="python")
+
+# Rename verbose paper column titles into shorter code-friendly names.
 df = df.rename(
     columns={
         "Country": "country",
@@ -57,22 +85,36 @@ df = df.rename(
     }
 )
 
+# Keep only the modelling features and drop rows with missing values because
+# PCA, KMeans, and the classifiers all need complete numeric input.
 x = df[FEATURES].dropna()
+
+# Keep a cleaned copy of the original dataframe aligned to the retained rows,
+# so country names and metadata remain available for plotting later.
 df_clean = df.loc[x.index].copy()
 
+# Standardize the features so large-scale variables like population do not
+# dominate smaller-scale score variables.
 scaler = StandardScaler()
 x_scaled = scaler.fit_transform(x)
 
+# Reduce the five standardized features down to three principal components.
+# Three components are enough for the later 3D visualization.
 pca = PCA(n_components=3)
 x_pca = pca.fit_transform(x_scaled)
 
+# Fit the five-cluster solution used throughout the replication.
 labels = KMeans(n_clusters=5, **PAPER_KMEANS).fit_predict(x_scaled)
+
+# Store cluster labels and PCA coordinates back on the cleaned dataframe
+# so each country carries all information needed for later charts.
 df_clean["cluster"] = labels
 df_clean["PCA1"] = x_pca[:, 0]
 df_clean["PCA2"] = x_pca[:, 1]
 df_clean["PCA3"] = x_pca[:, 2]
 
-# Figure 1
+# Figure 1: circular summary of the methodological pipeline.
+# Each label is one major stage in the replication process.
 steps = [
     "1. Data\nPreprocessing",
     "2. Exploratory\nAnalysis",
@@ -83,16 +125,28 @@ steps = [
     "7. Model\nTesting",
     "8. Performance\nEvaluation",
 ]
+
+# Spread the steps evenly around a full circle.
 angles = np.linspace(0, 2 * np.pi, len(steps), endpoint=False)
 
+# Use a polar axis because it is the easiest way to place labels in a circle.
 fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={"polar": True})
+
+# Start from the top rather than the right-hand side.
 ax.set_theta_offset(np.pi / 2)
+
+# Move clockwise so the flow reads naturally.
 ax.set_theta_direction(-1)
+
+# Hide default tick labels because the custom text boxes replace them.
 ax.set_yticklabels([])
 ax.set_xticklabels([])
+
+# Remove the outer spine for a cleaner diagram-like appearance.
 ax.spines["polar"].set_visible(False)
 ax.set_facecolor("white")
 
+# Draw one rounded text box per workflow step.
 for angle, step in zip(angles, steps):
     ax.text(
         angle,
@@ -109,6 +163,7 @@ for angle, step in zip(angles, steps):
         },
     )
 
+# Connect consecutive steps with curved arrows to show process flow.
 for i in range(len(steps)):
     a1, a2 = angles[i], angles[(i + 1) % len(steps)]
     ax.annotate(
@@ -123,32 +178,39 @@ for i in range(len(steps)):
         },
     )
 
+# Finalise and save the figure.
 plt.title("Circular Methodological Flow", fontsize=13, weight="bold", pad=25)
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig1_circular_flow.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 2
+# Figure 2: compare the strongest and weakest countries by overall SDG score.
+# Sort once, then take the first and last twenty rows.
 fig_df = df[["country", "sdg_score"]].dropna().sort_values("sdg_score", ascending=False)
 top20 = fig_df.head(20)
 bottom20 = fig_df.tail(20).sort_values("sdg_score")
 
+# Use two side-by-side panels so top and bottom performers are easy to compare.
 fig, axes = plt.subplots(1, 2, figsize=(14, 9))
+
+# Left panel: highest-scoring countries.
 sns.barplot(data=top20, y="country", x="sdg_score", palette="Greens_r", ax=axes[0])
 axes[0].set_title("Top 20 Countries by 2025 SDG Score", fontsize=12, weight="bold")
 axes[0].set_xlabel("SDG Score")
 axes[0].set_ylabel("")
 
+# Right panel: lowest-scoring countries.
 sns.barplot(data=bottom20, y="country", x="sdg_score", palette="Reds_r", ax=axes[1])
 axes[1].set_title("Bottom 20 Countries by 2025 SDG Score", fontsize=12, weight="bold")
 axes[1].set_xlabel("SDG Score")
 axes[1].set_ylabel("")
 
+# Save the combined bar chart.
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig2_top_bottom20_sdg.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 3
+# Figure 3: show the top 20 countries separately for four individual indicators.
 variables = ["spillover_score", "regional_score", "population", "progress"]
 titles = [
     "Top 20 Countries by International Spillover Score",
@@ -157,17 +219,22 @@ titles = [
     "Top 20 Countries by SDG Progress",
 ]
 
+# A 2x2 grid matches the four indicators cleanly.
 fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 axes = axes.flatten()
 
+# For each indicator, keep the top 20 countries and plot them in its own panel.
 for ax, var, title in zip(axes, variables, titles):
     top20 = df[["country", var]].dropna().sort_values(var, ascending=False).head(20)
     sns.barplot(data=top20, x="country", y=var, palette="viridis", ax=ax)
     ax.set_title(title, fontsize=10, weight="bold")
     ax.set_xlabel("")
     ax.set_ylabel("")
+
+    # Rotate labels because country names are too long to fit horizontally.
     ax.tick_params(axis="x", rotation=90, labelsize=7)
 
+# Add a shared title, then save the multi-panel figure.
 plt.suptitle(
     "Figure 3. Top 20 countries by key Sustainable Development Indicators.",
     fontsize=13,
@@ -177,8 +244,11 @@ plt.tight_layout()
 plt.savefig(OUTDIR / "fig3_top20_indicators.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 4
+# Figure 4: inspect linear relationships among the five selected features.
+# This helps explain whether some indicators move together before clustering.
 corr = df[FEATURES].corr()
+
+# Save the exact correlation values as a CSV as well as a heatmap image.
 corr.reset_index().to_csv(OUTDIR / "fig4_correlation_values.csv", index=False)
 
 fig, ax = plt.subplots(figsize=(8, 6))
@@ -188,9 +258,12 @@ plt.tight_layout()
 plt.savefig(OUTDIR / "fig4_correlation.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Table 2 and Figure 5
+# Table 2 and Figure 5: evaluate candidate numbers of clusters.
+# We compare inertia and silhouette score from k=2 to k=10.
 rows = []
 ks = list(range(2, 11))
+
+# Fit a separate KMeans model for each candidate k and record the metrics.
 for k in ks:
     km = KMeans(n_clusters=k, **PAPER_KMEANS)
     k_labels = km.fit_predict(x_scaled)
@@ -202,9 +275,11 @@ for k in ks:
         }
     )
 
+# Turn the collected rows into a table for export.
 table2 = pd.DataFrame(rows)
 table2.to_csv(OUTDIR / "table2_elbow.csv", index=False)
 
+# Use dual y-axes so both metrics can be seen on the same k scale.
 fig, ax1 = plt.subplots(figsize=(9, 5))
 ax1.plot(table2["k"], table2["WCSS (Inertia)"], "o-", color="steelblue", label="WCSS (Inertia)")
 ax1.set_xlabel("Number of Clusters (k)", fontsize=11)
@@ -216,29 +291,39 @@ ax2.plot(table2["k"], table2["Silhouette Score"], "o-", color="crimson", label="
 ax2.set_ylabel("Silhouette Score", color="crimson", fontsize=11)
 ax2.tick_params(axis="y", labelcolor="crimson")
 
+# Mark the chosen paper solution directly on the chart.
 ax1.axvline(x=5, color="green", linestyle="--", linewidth=1.5, label="k=5 (optimal)")
 ax1.set_title("Elbow Method and Silhouette Score", fontsize=12, weight="bold")
 ax1.grid(True, alpha=0.3)
 
+# Merge legend entries from both axes into one legend box.
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
 ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=9)
 
+# Save the diagnostic plot.
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig5_elbow_silhouette.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 6
+# Figure 6: visualize the five-cluster solution in 3D PCA space.
 cluster_colors = ["#FFD700", "#FF4500", "#32CD32", "#1E90FF", "#800080"]
+
+# Count countries per cluster so the legend can report group sizes.
 cluster_counts = df_clean["cluster"].value_counts().sort_index()
 
+# Refit KMeans here because we need the trained centroids for plotting.
 kmeans5 = KMeans(n_clusters=5, **PAPER_KMEANS)
 labels5 = kmeans5.fit_predict(x_scaled)
+
+# Transform the cluster centroids into the same PCA coordinate system used
+# for the country points.
 centers_pca = pca.transform(kmeans5.cluster_centers_)
 
 fig = plt.figure(figsize=(16, 12))
 ax = fig.add_subplot(111, projection="3d")
 
+# Plot every country as a colored point in PCA space.
 ax.scatter(
     df_clean["PCA1"],
     df_clean["PCA2"],
@@ -248,6 +333,7 @@ ax.scatter(
     alpha=0.85,
 )
 
+# Add a country name at every point so the cluster memberships are inspectable.
 for _, row in df_clean.iterrows():
     cid = int(row["cluster"])
     txt = ax.text(
@@ -258,8 +344,11 @@ for _, row in df_clean.iterrows():
         fontsize=7,
         color=cluster_colors[cid],
     )
+
+    # White outlining helps labels remain readable over dense points.
     txt.set_path_effects([path_effects.withStroke(linewidth=2, foreground="white")])
 
+# Draw the cluster centres as large black X markers.
 ax.scatter(
     centers_pca[:, 0],
     centers_pca[:, 1],
@@ -270,6 +359,7 @@ ax.scatter(
     label="Centroids",
 )
 
+# Label the PCA axes and include the silhouette score in the title.
 ax.set_xlabel("PCA 1")
 ax.set_ylabel("PCA 2")
 ax.set_zlabel("PCA 3")
@@ -280,6 +370,7 @@ ax.set_title(
     weight="bold",
 )
 
+# Manually construct legend entries so each cluster line can show its size.
 handles = [
     plt.Line2D(
         [],
@@ -292,21 +383,29 @@ handles = [
     )
     for i in sorted(cluster_counts.index)
 ]
+
+# Add the centroid marker to the legend after the cluster entries.
 handles.append(mpatches.Patch(color="black", label="Centroids"))
 ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.02, 1.0))
 
+# Save the 3D cluster visualisation.
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig6_3d_pca_clusters.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 7
+# Figure 7: summarize the average feature profile of each cluster.
+# This is a simple interpretation aid after clustering.
 cluster_means = df_clean.groupby("cluster")[FEATURES].mean()
 mm = MinMaxScaler()
+
+# Min-max normalization makes different features comparable on the same heatmap.
 cluster_means_norm = pd.DataFrame(
     mm.fit_transform(cluster_means),
     columns=cluster_means.columns,
     index=cluster_means.index,
 )
+
+# Save the normalized values so the exact numbers are available outside the plot.
 cluster_means_norm.reset_index().to_csv(OUTDIR / "fig7_cluster_means_normalized.csv", index=False)
 
 plt.figure(figsize=(9, 5))
@@ -317,7 +416,8 @@ plt.tight_layout()
 plt.savefig(OUTDIR / "fig7_cluster_heatmap.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Paper Tables 3 and 4
+# Paper Tables 3 and 4: hard-code the values reported in the paper
+# so they can be compared against the computed versions below.
 paper_table3 = pd.DataFrame(
     {
         "Feature": ["PCA1", "PCA2"],
@@ -342,14 +442,18 @@ paper_table4 = pd.DataFrame(
     }
 )
 
+# Save the paper tables exactly as reference outputs.
 paper_table3.to_csv(OUTDIR / "table3_anova.csv", index=False)
 paper_table4.to_csv(OUTDIR / "table4_manova.csv", index=False)
 
-# Computed Tables 3 and 4
+# Computed Tables 3 and 4: reproduce ANOVA and MANOVA from this run's data.
+# Only the first two PCA components are needed for these tests.
 pca_df = pd.DataFrame(x_pca[:, :2], columns=["PCA1", "PCA2"])
 pca_df["cluster"] = labels
 
 anova_rows = []
+
+# Run one-way ANOVA separately for PCA1 and PCA2 across the five clusters.
 for comp in ["PCA1", "PCA2"]:
     groups = [grp[comp].values for _, grp in pca_df.groupby("cluster")]
     f_val, p_val = f_oneway(*groups)
@@ -362,10 +466,14 @@ for comp in ["PCA1", "PCA2"]:
         }
     )
 
+# Export the computed ANOVA table.
 anova_df = pd.DataFrame(anova_rows)
 anova_df.to_csv(OUTDIR / "table3_anova_computed.csv", index=False)
 
+# Run multivariate ANOVA on PCA1 and PCA2 jointly.
 mv = MANOVA.from_formula("PCA1 + PCA2 ~ C(cluster)", data=pca_df)
+
+# Extract the statistics for the cluster effect only.
 effect = mv.mv_test().results["C(cluster)"]["stat"]
 stat_map = {
     "Wilks' lambda": "Wilks' Lambda",
@@ -374,6 +482,7 @@ stat_map = {
     "Roy's greatest root": "Roy's Largest Root",
 }
 
+# Convert statsmodels' output into the display format used in the report tables.
 manova_rows = []
 for raw_name, display_name in stat_map.items():
     row = effect.loc[raw_name]
@@ -387,41 +496,55 @@ for raw_name, display_name in stat_map.items():
         }
     )
 
+# Export the computed MANOVA table.
 manova_df = pd.DataFrame(manova_rows)
 manova_df.to_csv(OUTDIR / "table4_manova_computed.csv", index=False)
 
-# Figure 8
+# Figure 8: use Random Forest to estimate which original features matter most
+# for predicting the discovered cluster labels.
 x_rf = df_clean[FEATURES]
 y_rf = df_clean["cluster"]
 
+# Split into training and testing subsets for a simple validation check.
 x_train_rf, x_test_rf, y_train_rf, y_test_rf = train_test_split(
     x_rf, y_rf, test_size=0.3, random_state=42
 )
 
+# Train the Random Forest on the original feature space.
 rf = RandomForestClassifier(random_state=42)
 rf.fit(x_train_rf, y_train_rf)
 
+# Report accuracy on both train and test sets to contextualize the importances.
 train_acc = accuracy_score(y_train_rf, rf.predict(x_train_rf))
 test_acc = accuracy_score(y_test_rf, rf.predict(x_test_rf))
 
+# Build a feature-importance dataframe and sort it so the bar chart orders
+# features from least to most important.
 feat_imp = pd.DataFrame({"Feature": FEATURES, "Importance": rf.feature_importances_}).sort_values(
     "Importance", ascending=True
 )
+
+# Save the numeric values in descending order for tabular inspection.
 feat_imp.sort_values("Importance", ascending=False).to_csv(
     OUTDIR / "fig8_feature_importance_values.csv", index=False
 )
 
+# Draw the horizontal importance bars.
 fig, ax = plt.subplots(figsize=(8, 5))
 bars = ax.barh(
     feat_imp["Feature"],
     feat_imp["Importance"],
+
+    # Use two colors simply to create a little visual contrast within the chart.
     color=["#2ecc71" if i < 2 else "#3498db" for i in range(len(feat_imp))],
     edgecolor="white",
 )
 
+# Print the numeric importance value at the end of each bar.
 for bar, val in zip(bars, feat_imp["Importance"]):
     ax.text(val + 0.003, bar.get_y() + bar.get_height() / 2, f"{val:.3f}", va="center", fontsize=10)
 
+# Final axis formatting and save.
 ax.set_xlabel("Importance", fontsize=11)
 ax.set_ylabel("Feature", fontsize=11)
 ax.set_xlim(0, feat_imp["Importance"].max() + 0.07)
@@ -435,7 +558,7 @@ plt.tight_layout()
 plt.savefig(OUTDIR / "fig8_feature_importance.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Paper Table 5
+# Paper Table 5: reported model performance copied from the paper.
 paper_table5 = pd.DataFrame(
     {
         "Model": [
@@ -455,15 +578,18 @@ paper_table5 = pd.DataFrame(
 )
 paper_table5.to_csv(OUTDIR / "table5_classification.csv", index=False)
 
-# Computed Table 5
+# Computed Table 5: train the same family of models on this replication's data.
+# Stratification keeps each cluster represented in both train and test sets.
 x_train, x_test, y_train, y_test = train_test_split(
     x_scaled, labels, test_size=0.3, random_state=42, stratify=labels
 )
 
+# Keep the class ordering explicit because ROC/AUC calculations depend on it.
 classes = sorted(np.unique(labels))
 y_test_bin = label_binarize(y_test, classes=classes)
 n_classes = y_test_bin.shape[1]
 
+# Define the models to benchmark against the discovered cluster labels.
 models = {
     "Random Forest": RandomForestClassifier(random_state=42),
     "SVM": SVC(probability=True, random_state=42),
@@ -478,25 +604,37 @@ models = {
     "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
 }
 
+# This dictionary stores every model's outputs so the metrics table,
+# confusion matrices, and ROC curves can all reuse the same results.
 results = {}
+
+# Wrap each model in one-vs-rest so all classifiers follow the same multiclass strategy.
 for name, model in models.items():
     clf = OneVsRestClassifier(model)
     clf.fit(x_train, y_train)
     y_pred = clf.predict(x_test)
 
+    # If the estimator exposes probabilities, use them directly.
     if hasattr(clf, "predict_proba"):
         y_prob = clf.predict_proba(x_test)
     else:
         try:
+            # Otherwise try to convert decision scores into probability-like values.
             scores = clf.decision_function(x_test)
             if scores.ndim == 1:
+                # Binary scores arrive as one dimension, so make them two-column.
                 y_prob = np.vstack([1 - scores, scores]).T
             else:
+                # For multiclass scores, normalize row-wise so the values sum to 1.
                 exp_scores = np.exp(scores - scores.max(axis=1, keepdims=True))
                 y_prob = exp_scores / exp_scores.sum(axis=1, keepdims=True)
         except Exception:
+            # If neither probabilities nor decision scores work, fall back to zeros
+            # so the rest of the script can still complete.
             y_prob = np.zeros((x_test.shape[0], n_classes))
 
+    # Some models may output fewer probability columns than the full class set.
+    # Add missing classes back with zero probability so shapes stay consistent.
     if y_prob.shape[1] < n_classes:
         prob_df = pd.DataFrame(y_prob, columns=clf.classes_)
         for c in classes:
@@ -504,13 +642,17 @@ for name, model in models.items():
                 prob_df[c] = 0.0
         y_prob = prob_df[classes].values
 
+    # Replace NaNs before computing metrics.
     y_prob = np.nan_to_num(y_prob)
 
     try:
+        # Compute macro one-vs-rest ROC AUC across all classes.
         roc_auc = roc_auc_score(y_test_bin, y_prob, average="macro", multi_class="ovr")
     except Exception:
+        # Keep the pipeline running even if a model produces invalid ROC inputs.
         roc_auc = np.nan
 
+    # Store everything needed for the final metrics table and the two plots.
     results[name] = {
         "y_pred": y_pred,
         "y_prob": y_prob,
@@ -519,6 +661,7 @@ for name, model in models.items():
         "conf_matrix": confusion_matrix(y_test, y_pred),
     }
 
+# Convert each stored classification report into one summary row.
 rows = []
 for name, result in results.items():
     rep = result["report"]
@@ -533,14 +676,16 @@ for name, result in results.items():
         }
     )
 
+# Save the computed classifier comparison table.
 metrics_df = pd.DataFrame(rows)
 metrics_df.to_csv(OUTDIR / "table5_classification_computed.csv", index=False)
 
-# Figure 9
+# Figure 9: show confusion matrices for all six classifiers.
 palettes = ["Blues", "Greens", "Oranges", "Purples", "Reds", "coolwarm"]
 fig, axes = plt.subplots(3, 2, figsize=(12, 16))
 axes = axes.ravel()
 
+# Plot one heatmap per model.
 for idx, (name, result) in enumerate(results.items()):
     sns.heatmap(
         result["conf_matrix"],
@@ -556,19 +701,22 @@ for idx, (name, result) in enumerate(results.items()):
     axes[idx].set_xlabel("Predicted Label")
     axes[idx].set_ylabel("True Label")
 
+# Add a shared title and save the figure grid.
 plt.suptitle("Figure 9. Confusion Matrices", fontsize=13, weight="bold", y=1.002)
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig9_confusion_matrices.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Figure 10
+# Figure 10: plot one-vs-rest ROC curves for every class within every model.
 fig, axes = plt.subplots(3, 2, figsize=(12, 16))
 axes = axes.ravel()
 
+# Loop through the stored model results again so the curves match the table above.
 for idx, (name, result) in enumerate(results.items()):
     ax = axes[idx]
     y_prob = result["y_prob"]
 
+    # Draw one ROC curve per class.
     for i in range(n_classes):
         fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_prob[:, i])
         try:
@@ -577,6 +725,7 @@ for idx, (name, result) in enumerate(results.items()):
             auc_val = np.nan
         ax.plot(fpr, tpr, lw=2, label=f"Class {i} (AUC={auc_val:.3f})")
 
+    # Add the diagonal random-classifier baseline.
     ax.plot([0, 1], [0, 1], "k--", lw=1)
     ax.set_xlim([0, 1])
     ax.set_ylim([0, 1.05])
@@ -586,12 +735,14 @@ for idx, (name, result) in enumerate(results.items()):
     ax.legend(fontsize=8, loc="lower right")
     ax.grid(True, alpha=0.3)
 
+# Save the ROC figure grid.
 plt.suptitle("Figure 10. ROC Curves", fontsize=13, weight="bold", y=1.002)
 plt.tight_layout()
 plt.savefig(OUTDIR / "fig10_roc_curves.png", dpi=150, bbox_inches="tight")
 plt.close()
 
-# Run summary
+# Run summary: collect key diagnostics into a plain-text file so the
+# overall replication outcome can be checked quickly without opening each output.
 summary_lines = [
     "Paper-aligned replication completed.",
     f"Output folder: {OUTDIR}",
@@ -612,4 +763,6 @@ summary_lines = [
     "Computed Table 5 verification:",
     metrics_df.to_string(index=False),
 ]
+
+# Write the summary text file at the end of the run.
 (OUTDIR / "run_summary.txt").write_text("\n".join(summary_lines), encoding="utf-8")
