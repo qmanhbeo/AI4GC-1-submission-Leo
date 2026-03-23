@@ -25,8 +25,8 @@
 
 **1. Create and activate the conda environment:**
 ```bash
-conda create -n sdg_replicate python=3.11 -y
-conda activate sdg_replicate
+conda create -n gsp python=3.11 -y
+conda activate gsp
 pip install -r requirements.txt
 ```
 
