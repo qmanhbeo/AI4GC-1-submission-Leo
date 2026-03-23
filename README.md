@@ -8,7 +8,9 @@
 
 This repository is the cleaned submission package for the assignment. It contains the original author code, a refactored author-aligned version, a notebook version, a batch-safe replication script, the source dataset, the paper PDF, the written report, and the generated replication outputs.
 
-## Quickstart for the Marker
+Works on Windows and Linux. Haven't tested for MacOS.
+
+## Quickstart for Marking
 
 If you only want to assess the submission without rerunning code:
 
@@ -17,6 +19,11 @@ If you only want to assess the submission without rerunning code:
 3. Open `README.md` for the repository structure and file roles.
 
 If you want to rerun the full replication from the command line, the easiest route is the cleaned script.
+
+```bash
+git clone https://github.com/qmanhbeo/AI4GC-1-submission-Leo
+cd AI4GC-1-submission-Leo
+```
 
 Use either `venv` or Conda:
 
